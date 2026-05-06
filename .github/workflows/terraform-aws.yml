@@ -1,0 +1,171 @@
+name: Terraform (AWS)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Directory containing Terraform configuration files"
+        required: false
+        type: string
+        default: "."
+      terraform-version:
+        description: "Terraform version to install"
+        required: false
+        type: string
+        default: "latest"
+      environment:
+        description: "GitHub Environment name for approval gate (e.g. production)"
+        required: true
+        type: string
+      plan-args:
+        description: "Extra arguments for terraform plan (e.g. -var-file=prod.tfvars)"
+        required: false
+        type: string
+        default: ""
+      apply-args:
+        description: "Extra arguments for terraform apply (e.g. -parallelism=10). Note: -var and -var-file are ignored when applying a saved plan."
+        required: false
+        type: string
+        default: ""
+      aws-region:
+        description: "AWS region (e.g. us-east-1)"
+        required: true
+        type: string
+      role-arn:
+        description: "IAM role ARN for OIDC authentication. If set, OIDC is used instead of access keys."
+        required: false
+        type: string
+        default: ""
+    secrets:
+      aws-access-key-id:
+        description: "AWS access key ID (required when role-arn is empty)"
+        required: false
+      aws-secret-access-key:
+        description: "AWS secret access key (required when role-arn is empty)"
+        required: false
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ inputs.role-arn != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Configure AWS credentials (Access Key)
+        if: ${{ inputs.role-arn == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform init
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          terraform plan -out=tfplan -no-color ${{ inputs.plan-args }} 2>&1 | tee plan-output.txt
+
+      - name: Write plan to job summary
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          {
+            echo "## Terraform Plan (AWS)"
+            echo ""
+            echo "**Working directory**: \`${{ inputs.working-directory }}\`"
+            echo "**Environment**: \`${{ inputs.environment }}\`"
+            echo ""
+            echo '```'
+            cat plan-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ inputs.working-directory }}/tfplan
+          retention-days: 5
+
+  apply:
+    name: Terraform Apply
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ inputs.role-arn != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Configure AWS credentials (Access Key)
+        if: ${{ inputs.role-arn == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ inputs.working-directory }}
+
+      - name: Terraform init
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform init
+
+      - name: Terraform apply
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          terraform apply -no-color ${{ inputs.apply-args }} tfplan 2>&1 | tee apply-output.txt
+
+      - name: Write apply result to job summary
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          {
+            echo "## Terraform Apply (AWS)"
+            echo ""
+            echo "**Working directory**: \`${{ inputs.working-directory }}\`"
+            echo "**Environment**: \`${{ inputs.environment }}\`"
+            echo ""
+            echo '```'
+            cat apply-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
