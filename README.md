@@ -69,6 +69,7 @@ Go to **Actions > DB Schema Apply > Run workflow** to trigger manually.
 |------|------|----------|---------|-------------|
 | `schema-path` | string | yes | — | HCL file or directory path relative to repo root |
 | `dev-url` | string | no | `docker://postgres/15` | Dev database URL for diff calculation |
+| `exclude` | string | no | `""` | Comma-separated glob patterns to exclude database objects (e.g. `*.audit_logs,temp_*`) |
 
 ## Secrets
 
@@ -116,3 +117,26 @@ Common dev-url values:
 | MySQL 8 | `docker://mysql/8/mydb` |
 | MariaDB | `docker://mariadb/latest/mydb` |
 | SQLite | `sqlite://file?mode=memory` |
+
+## Excluding Database Objects
+
+By default Atlas scans all database objects. Use the `exclude` input to skip objects you don't want Atlas to manage. Patterns are comma-separated and each becomes a separate `--exclude` flag.
+
+```yaml
+with:
+  schema-path: "schema/schema.hcl"
+  exclude: "*.audit_logs,temp_*"
+```
+
+### Pattern Examples
+
+| Pattern | Effect |
+|---------|--------|
+| `temp_*` | Exclude all objects starting with `temp_` |
+| `*.river_*` | Exclude objects matching `river_*` in any schema |
+| `*[type=function]` | Exclude all functions |
+| `*[type=policy\|trigger]` | Exclude all policies and triggers |
+| `atlas_schema_revisions` | Exclude the `atlas_schema_revisions` schema itself |
+| `atlas_schema_revisions.*` | Exclude objects inside `atlas_schema_revisions` schema |
+
+See the [Atlas CLI Reference](https://atlasgo.io/cli-reference) for full glob pattern syntax.

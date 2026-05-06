@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: "docker://postgres/15"
+      exclude:
+        description: "Comma-separated glob patterns to exclude database objects from diff (e.g. '*.audit_logs,temp_*'). Supports type filters like '*[type=function]'. Each pattern is passed as a separate --exclude flag."
+        required: false
+        type: string
+        default: ""
     secrets:
       db-url:
         description: "Target database connection URL"
@@ -64,11 +69,21 @@ jobs:
           DB_URL: ${{ secrets.db-url }}
           SCHEMA_PATH: ${{ inputs.schema-path }}
           DEV_URL: ${{ inputs.dev-url }}
+          EXCLUDE: ${{ inputs.exclude }}
         run: |
+          EXCLUDE_ARGS=()
+          if [ -n "$EXCLUDE" ]; then
+            IFS=',' read -ra PATTERNS <<< "$EXCLUDE"
+            for pattern in "${PATTERNS[@]}"; do
+              trimmed=$(echo "$pattern" | xargs)
+              [ -n "$trimmed" ] && EXCLUDE_ARGS+=(--exclude "$trimmed")
+            done
+          fi
           OUTPUT=$(atlas schema diff \
             --from "$DB_URL" \
             --to "file://$SCHEMA_PATH" \
-            --dev-url "$DEV_URL" 2>&1) || true
+            --dev-url "$DEV_URL" \
+            "${EXCLUDE_ARGS[@]}" 2>&1) || true
           {
             echo "diff<<EOF"
             echo "$OUTPUT"
