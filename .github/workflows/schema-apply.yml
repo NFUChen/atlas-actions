@@ -3,8 +3,8 @@ name: Atlas Schema Apply
 on:
   workflow_call:
     inputs:
-      schema-file:
-        description: "Path to the Atlas HCL schema file (relative to repo root)"
+      schema-path:
+        description: "Path to the Atlas HCL schema file or directory (relative to repo root)"
         required: true
         type: string
       dev-url:
@@ -43,12 +43,12 @@ jobs:
         id: dry-run
         env:
           DB_URL: ${{ secrets.db-url }}
-          SCHEMA_FILE: ${{ inputs.schema-file }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
           DEV_URL: ${{ inputs.dev-url }}
         run: |
           OUTPUT=$(atlas schema apply \
             --url "$DB_URL" \
-            --to "file://$SCHEMA_FILE" \
+            --to "file://$SCHEMA_PATH" \
             --dev-url "$DEV_URL" \
             --dry-run 2>&1)
           {
@@ -59,14 +59,14 @@ jobs:
 
       - name: Write dry-run to job summary
         env:
-          SCHEMA_FILE: ${{ inputs.schema-file }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
           DEV_URL: ${{ inputs.dev-url }}
           PLAN_OUTPUT: ${{ steps.dry-run.outputs.plan }}
         run: |
           {
             echo "## Atlas Schema Apply"
             echo ""
-            echo "**Schema file**: \`${SCHEMA_FILE}\`"
+            echo "**Schema path**: \`${SCHEMA_PATH}\`"
             echo "**Dev URL**: \`${DEV_URL}\`"
             echo ""
             echo "### Dry Run - Changes to Apply"
@@ -79,11 +79,11 @@ jobs:
       - name: Apply schema changes
         env:
           DB_URL: ${{ secrets.db-url }}
-          SCHEMA_FILE: ${{ inputs.schema-file }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
           DEV_URL: ${{ inputs.dev-url }}
         run: |
           atlas schema apply \
             --url "$DB_URL" \
-            --to "file://$SCHEMA_FILE" \
+            --to "file://$SCHEMA_PATH" \
             --dev-url "$DEV_URL" \
             --auto-approve

@@ -13,7 +13,7 @@ Reusable GitHub Actions workflows for [Atlas](https://atlasgo.io/) declarative s
 
 ### Prerequisites
 
-- An Atlas HCL schema file in your repo (e.g. `schema/schema.hcl`)
+- An Atlas HCL schema file or directory in your repo (e.g. `schema/schema.hcl` or `schema/`)
 - A `DB_URL` secret configured in your repo with the target database connection string
 - (Optional) A `WG_CONFIG_FILE` secret with WireGuard config if the database is behind a VPN
 
@@ -33,7 +33,7 @@ jobs:
   plan:
     uses: NFUChen/atlas-actions/.github/workflows/schema-plan.yml@main
     with:
-      schema-file: "schema/schema.hcl"
+      schema-path: "schema/schema.hcl"
     secrets:
       db-url: ${{ secrets.DB_URL }}
       wg-config-file: ${{ secrets.WG_CONFIG_FILE }}
@@ -55,7 +55,7 @@ jobs:
   apply:
     uses: NFUChen/atlas-actions/.github/workflows/schema-apply.yml@main
     with:
-      schema-file: "schema/schema.hcl"
+      schema-path: "schema/schema.hcl"
     secrets:
       db-url: ${{ secrets.DB_URL }}
       wg-config-file: ${{ secrets.WG_CONFIG_FILE }}
@@ -67,7 +67,7 @@ Go to **Actions > DB Schema Apply > Run workflow** to trigger manually.
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `schema-file` | string | yes | — | HCL file path relative to repo root |
+| `schema-path` | string | yes | — | HCL file or directory path relative to repo root |
 | `dev-url` | string | no | `docker://postgres/15` | Dev database URL for diff calculation |
 
 ## Secrets
@@ -97,8 +97,14 @@ Review plan ─► Merge PR ─► Manually trigger apply
 The `dev-url` defaults to `docker://postgres/15`. Override it for other databases:
 
 ```yaml
+# Single file
 with:
-  schema-file: "schema/schema.hcl"
+  schema-path: "schema/schema.hcl"
+  dev-url: "docker://mysql/8/mydb"
+
+# Directory of HCL files
+with:
+  schema-path: "schema/"
   dev-url: "docker://mysql/8/mydb"
 ```
 
