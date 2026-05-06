@@ -36,6 +36,25 @@ jobs:
         with:
           WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
 
+      - name: Check database connectivity
+        env:
+          DB_URL: ${{ secrets.db-url }}
+        run: |
+          # Parse host and port from database URL
+          # Supports formats like postgres://user:pass@host:port/dbname
+          DB_HOST=$(echo "$DB_URL" | sed -E 's|.*@([^:/]+).*|\1|')
+          DB_PORT=$(echo "$DB_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+          # Default to 5432 if port not found
+          if ! echo "$DB_PORT" | grep -qE '^[0-9]+$'; then
+            DB_PORT=5432
+          fi
+          echo "Testing connectivity to ${DB_HOST}:${DB_PORT}..."
+          if ! nc -zv -w 10 "$DB_HOST" "$DB_PORT" 2>&1; then
+            echo "::error::Cannot reach database at ${DB_HOST}:${DB_PORT}. Aborting apply."
+            exit 1
+          fi
+          echo "Database connectivity check passed."
+
       - name: Setup Atlas
         uses: ariga/setup-atlas@v0
 
