@@ -1,0 +1,90 @@
+name: Atlas Schema Plan
+
+on:
+  workflow_call:
+    inputs:
+      schema-file:
+        description: "Path to the Atlas HCL schema file (relative to repo root)"
+        required: true
+        type: string
+      dev-url:
+        description: "Atlas dev database URL for diff calculation"
+        required: false
+        type: string
+        default: "docker://postgres/15"
+    secrets:
+      db-url:
+        description: "Target database connection URL"
+        required: true
+      wg-config-file:
+        description: "WireGuard configuration file content for VPN tunnel"
+        required: false
+
+jobs:
+  plan:
+    name: Schema Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Set up WireGuard connection
+        if: ${{ env.WG_CONFIG_FILE != '' }}
+        uses: niklaskeerl/easy-wireguard-action@v2
+        env:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+        with:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+
+      - name: Setup Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: Generate schema diff
+        id: diff
+        env:
+          DB_URL: ${{ secrets.db-url }}
+          SCHEMA_FILE: ${{ inputs.schema-file }}
+          DEV_URL: ${{ inputs.dev-url }}
+        run: |
+          OUTPUT=$(atlas schema diff \
+            --from "$DB_URL" \
+            --to "file://$SCHEMA_FILE" \
+            --dev-url "$DEV_URL" 2>&1) || true
+          {
+            echo "diff<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        env:
+          SCHEMA_FILE: ${{ inputs.schema-file }}
+          DEV_URL: ${{ inputs.dev-url }}
+          DIFF_OUTPUT: ${{ steps.diff.outputs.diff }}
+        run: |
+          {
+            echo "## Atlas Schema Plan"
+            echo ""
+            echo "**Schema file**: \`${SCHEMA_FILE}\`"
+            echo "**Dev URL**: \`${DEV_URL}\`"
+            echo ""
+            echo "### Planned Changes"
+            echo ""
+            echo '```sql'
+            echo "$DIFF_OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save plan to file
+        env:
+          DIFF_OUTPUT: ${{ steps.diff.outputs.diff }}
+        run: |
+          mkdir -p plan-output
+          echo "$DIFF_OUTPUT" > plan-output/plan.sql
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-schema-plan
+          path: plan-output/plan.sql
+          retention-days: 30

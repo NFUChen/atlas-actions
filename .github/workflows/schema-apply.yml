@@ -1,0 +1,89 @@
+name: Atlas Schema Apply
+
+on:
+  workflow_call:
+    inputs:
+      schema-file:
+        description: "Path to the Atlas HCL schema file (relative to repo root)"
+        required: true
+        type: string
+      dev-url:
+        description: "Atlas dev database URL for diff calculation"
+        required: false
+        type: string
+        default: "docker://postgres/15"
+    secrets:
+      db-url:
+        description: "Target database connection URL"
+        required: true
+      wg-config-file:
+        description: "WireGuard configuration file content for VPN tunnel"
+        required: false
+
+jobs:
+  apply:
+    name: Schema Apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Set up WireGuard connection
+        if: ${{ env.WG_CONFIG_FILE != '' }}
+        uses: niklaskeerl/easy-wireguard-action@v2
+        env:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+        with:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+
+      - name: Setup Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: Dry run - preview changes
+        id: dry-run
+        env:
+          DB_URL: ${{ secrets.db-url }}
+          SCHEMA_FILE: ${{ inputs.schema-file }}
+          DEV_URL: ${{ inputs.dev-url }}
+        run: |
+          OUTPUT=$(atlas schema apply \
+            --url "$DB_URL" \
+            --to "file://$SCHEMA_FILE" \
+            --dev-url "$DEV_URL" \
+            --dry-run 2>&1)
+          {
+            echo "plan<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write dry-run to job summary
+        env:
+          SCHEMA_FILE: ${{ inputs.schema-file }}
+          DEV_URL: ${{ inputs.dev-url }}
+          PLAN_OUTPUT: ${{ steps.dry-run.outputs.plan }}
+        run: |
+          {
+            echo "## Atlas Schema Apply"
+            echo ""
+            echo "**Schema file**: \`${SCHEMA_FILE}\`"
+            echo "**Dev URL**: \`${DEV_URL}\`"
+            echo ""
+            echo "### Dry Run - Changes to Apply"
+            echo ""
+            echo '```sql'
+            echo "$PLAN_OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply schema changes
+        env:
+          DB_URL: ${{ secrets.db-url }}
+          SCHEMA_FILE: ${{ inputs.schema-file }}
+          DEV_URL: ${{ inputs.dev-url }}
+        run: |
+          atlas schema apply \
+            --url "$DB_URL" \
+            --to "file://$SCHEMA_FILE" \
+            --dev-url "$DEV_URL" \
+            --auto-approve
