@@ -49,7 +49,7 @@ jobs:
 
       - name: Set up WireGuard connection
         if: ${{ env.WG_CONFIG_FILE != '' }}
-        uses: niklaskeerl/easy-wireguard-action@v2
+        uses: ./.github/actions/wireguard
         env:
           WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
         with:
