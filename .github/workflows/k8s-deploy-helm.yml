@@ -1,0 +1,133 @@
+name: K8s Deploy (Helm)
+
+on:
+  workflow_call:
+    inputs:
+      chart-path:
+        description: "Path to Helm chart directory (relative to repo root)"
+        required: true
+        type: string
+      release-name:
+        description: "Helm release name"
+        required: true
+        type: string
+      namespace:
+        description: "Target Kubernetes namespace"
+        required: false
+        type: string
+        default: "default"
+      values-file:
+        description: "Path to values file (relative to repo root)"
+        required: false
+        type: string
+        default: ""
+      set-values:
+        description: "Newline-separated key=value pairs passed as --set flags"
+        required: false
+        type: string
+        default: ""
+      helm-version:
+        description: "Helm version to install (e.g. v3.16.0)"
+        required: false
+        type: string
+        default: "latest"
+    secrets:
+      kubeconfig:
+        description: "Full kubeconfig file content (base64 encoded)"
+        required: true
+      wg-config-file:
+        description: "WireGuard configuration file content for VPN tunnel"
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Set up WireGuard connection
+        if: ${{ env.WG_CONFIG_FILE != '' }}
+        uses: niklaskeerl/easy-wireguard-action@v2
+        env:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+        with:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ inputs.helm-version }}
+
+      - name: Write kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.kubeconfig }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: |
+          if ! kubectl cluster-info 2>&1; then
+            echo "::error::Cannot connect to Kubernetes cluster. Check kubeconfig and network connectivity."
+            exit 1
+          fi
+          echo "Cluster connectivity check passed."
+
+      - name: Deploy with Helm
+        id: helm
+        env:
+          CHART_PATH: ${{ inputs.chart-path }}
+          RELEASE_NAME: ${{ inputs.release-name }}
+          NAMESPACE: ${{ inputs.namespace }}
+          VALUES_FILE: ${{ inputs.values-file }}
+          SET_VALUES: ${{ inputs.set-values }}
+        run: |
+          HELM_ARGS=()
+          if [ -n "$VALUES_FILE" ]; then
+            HELM_ARGS+=(-f "$VALUES_FILE")
+          fi
+          if [ -n "$SET_VALUES" ]; then
+            while IFS= read -r line; do
+              line=$(echo "$line" | xargs)
+              [ -z "$line" ] && continue
+              HELM_ARGS+=(--set "$line")
+            done <<< "$SET_VALUES"
+          fi
+          OUTPUT=$(helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
+            -n "$NAMESPACE" \
+            --create-namespace \
+            "${HELM_ARGS[@]}" 2>&1)
+          echo "$OUTPUT"
+          {
+            echo "result<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        env:
+          CHART_PATH: ${{ inputs.chart-path }}
+          RELEASE_NAME: ${{ inputs.release-name }}
+          NAMESPACE: ${{ inputs.namespace }}
+          VALUES_FILE: ${{ inputs.values-file }}
+          HELM_OUTPUT: ${{ steps.helm.outputs.result }}
+        run: |
+          {
+            echo "## K8s Deploy (Helm)"
+            echo ""
+            echo "**Release**: \`${RELEASE_NAME}\`"
+            echo "**Namespace**: \`${NAMESPACE}\`"
+            echo "**Chart path**: \`${CHART_PATH}\`"
+            if [ -n "$VALUES_FILE" ]; then
+              echo "**Values file**: \`${VALUES_FILE}\`"
+            fi
+            echo ""
+            echo "### Helm Output"
+            echo ""
+            echo '```'
+            echo "$HELM_OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
