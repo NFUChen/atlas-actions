@@ -31,7 +31,7 @@ on:
 
 jobs:
   plan:
-    uses: <org>/atlas-actions/.github/workflows/schema-plan.yml@main
+    uses: NFUChen/atlas-actions/.github/workflows/schema-plan.yml@main
     with:
       schema-file: "schema/schema.hcl"
     secrets:
@@ -53,7 +53,7 @@ on:
 
 jobs:
   apply:
-    uses: <org>/atlas-actions/.github/workflows/schema-apply.yml@main
+    uses: NFUChen/atlas-actions/.github/workflows/schema-apply.yml@main
     with:
       schema-file: "schema/schema.hcl"
     secrets:
