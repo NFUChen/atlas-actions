@@ -1,0 +1,96 @@
+name: K8s Deploy (Manifest)
+
+on:
+  workflow_call:
+    inputs:
+      manifest-path:
+        description: "Path to manifest file or directory (relative to repo root)"
+        required: true
+        type: string
+      namespace:
+        description: "Target Kubernetes namespace"
+        required: false
+        type: string
+        default: "default"
+      kubectl-version:
+        description: "kubectl version to install (e.g. v1.31.0)"
+        required: false
+        type: string
+        default: "latest"
+    secrets:
+      kubeconfig:
+        description: "Full kubeconfig file content (base64 encoded)"
+        required: true
+      wg-config-file:
+        description: "WireGuard configuration file content for VPN tunnel"
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Set up WireGuard connection
+        if: ${{ env.WG_CONFIG_FILE != '' }}
+        uses: niklaskeerl/easy-wireguard-action@v2
+        env:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+        with:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ inputs.kubectl-version }}
+
+      - name: Write kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.kubeconfig }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: |
+          if ! kubectl cluster-info 2>&1; then
+            echo "::error::Cannot connect to Kubernetes cluster. Check kubeconfig and network connectivity."
+            exit 1
+          fi
+          echo "Cluster connectivity check passed."
+
+      - name: Apply manifests
+        id: apply
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest-path }}
+          NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          OUTPUT=$(kubectl apply -f "$MANIFEST_PATH" -n "$NAMESPACE" 2>&1)
+          echo "$OUTPUT"
+          {
+            echo "result<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest-path }}
+          NAMESPACE: ${{ inputs.namespace }}
+          APPLY_OUTPUT: ${{ steps.apply.outputs.result }}
+        run: |
+          {
+            echo "## K8s Deploy (Manifest)"
+            echo ""
+            echo "**Namespace**: \`${NAMESPACE}\`"
+            echo "**Manifest path**: \`${MANIFEST_PATH}\`"
+            echo ""
+            echo "### Applied Resources"
+            echo ""
+            echo '```'
+            echo "$APPLY_OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
