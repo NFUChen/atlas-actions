@@ -1,0 +1,195 @@
+name: Terraform (Azure)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Directory containing Terraform configuration files"
+        required: false
+        type: string
+        default: "."
+      terraform-version:
+        description: "Terraform version to install"
+        required: false
+        type: string
+        default: "latest"
+      environment:
+        description: "GitHub Environment name for approval gate (e.g. production)"
+        required: true
+        type: string
+      plan-args:
+        description: "Extra arguments for terraform plan (e.g. -var-file=prod.tfvars)"
+        required: false
+        type: string
+        default: ""
+      apply-args:
+        description: "Extra arguments for terraform apply (e.g. -parallelism=10). Note: -var and -var-file are ignored when applying a saved plan."
+        required: false
+        type: string
+        default: ""
+      use-oidc:
+        description: "Use OIDC federated credentials instead of client secret"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      client-id:
+        description: "Service Principal or app registration client ID"
+        required: true
+      tenant-id:
+        description: "Azure AD tenant ID"
+        required: true
+      subscription-id:
+        description: "Azure subscription ID"
+        required: true
+      client-secret:
+        description: "Service Principal password (required when use-oidc is false)"
+        required: false
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.client-id }}
+      ARM_TENANT_ID: ${{ secrets.tenant-id }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.subscription-id }}
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Login to Azure (OIDC)
+        if: ${{ inputs.use-oidc }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.client-id }}
+          tenant-id: ${{ secrets.tenant-id }}
+          subscription-id: ${{ secrets.subscription-id }}
+
+      - name: Login to Azure (Service Principal)
+        if: ${{ !inputs.use-oidc }}
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.client-id }}","clientSecret":"${{ secrets.client-secret }}","subscriptionId":"${{ secrets.subscription-id }}","tenantId":"${{ secrets.tenant-id }}"}'
+
+      - name: Set Terraform ARM env vars (OIDC)
+        if: ${{ inputs.use-oidc }}
+        run: echo "ARM_USE_OIDC=true" >> "$GITHUB_ENV"
+
+      - name: Set Terraform ARM env vars (Service Principal)
+        if: ${{ !inputs.use-oidc }}
+        run: echo "ARM_CLIENT_SECRET=${{ secrets.client-secret }}" >> "$GITHUB_ENV"
+
+      - name: Terraform init
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          terraform plan -out=tfplan -no-color ${{ inputs.plan-args }} 2>&1 | tee plan-output.txt
+
+      - name: Write plan to job summary
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          {
+            echo "## Terraform Plan (Azure)"
+            echo ""
+            echo "**Working directory**: \`${{ inputs.working-directory }}\`"
+            echo "**Environment**: \`${{ inputs.environment }}\`"
+            echo ""
+            echo '```'
+            cat plan-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ inputs.working-directory }}/tfplan
+          retention-days: 5
+
+  apply:
+    name: Terraform Apply
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.client-id }}
+      ARM_TENANT_ID: ${{ secrets.tenant-id }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.subscription-id }}
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Login to Azure (OIDC)
+        if: ${{ inputs.use-oidc }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.client-id }}
+          tenant-id: ${{ secrets.tenant-id }}
+          subscription-id: ${{ secrets.subscription-id }}
+
+      - name: Login to Azure (Service Principal)
+        if: ${{ !inputs.use-oidc }}
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.client-id }}","clientSecret":"${{ secrets.client-secret }}","subscriptionId":"${{ secrets.subscription-id }}","tenantId":"${{ secrets.tenant-id }}"}'
+
+      - name: Set Terraform ARM env vars (OIDC)
+        if: ${{ inputs.use-oidc }}
+        run: echo "ARM_USE_OIDC=true" >> "$GITHUB_ENV"
+
+      - name: Set Terraform ARM env vars (Service Principal)
+        if: ${{ !inputs.use-oidc }}
+        run: echo "ARM_CLIENT_SECRET=${{ secrets.client-secret }}" >> "$GITHUB_ENV"
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ inputs.working-directory }}
+
+      - name: Terraform init
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform init
+
+      - name: Terraform apply
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          terraform apply -no-color ${{ inputs.apply-args }} tfplan 2>&1 | tee apply-output.txt
+
+      - name: Write apply result to job summary
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          {
+            echo "## Terraform Apply (Azure)"
+            echo ""
+            echo "**Working directory**: \`${{ inputs.working-directory }}\`"
+            echo "**Environment**: \`${{ inputs.environment }}\`"
+            echo ""
+            echo '```'
+            cat apply-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
