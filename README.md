@@ -1,6 +1,6 @@
 # Cloud Actions
 
-Reusable GitHub Actions workflows for common cloud infrastructure tasks. Each workflow is a standalone `workflow_call` that your repo calls directly -- no composite actions or cross-workflow dependencies.
+Reusable GitHub Actions workflows and composite actions for common cloud infrastructure tasks. Workflows are standalone `workflow_call` entries; composite actions are step-level building blocks you compose in your own jobs.
 
 ## Workflows
 
@@ -14,6 +14,10 @@ Reusable GitHub Actions workflows for common cloud infrastructure tasks. Each wo
 | **Docker** | `docker-build-push-acr.yml` | Build & push to Azure ACR |
 | **K8s** | `k8s-deploy-manifest.yml` | Deploy raw K8s manifests via `kubectl apply` |
 | **K8s** | `k8s-deploy-helm.yml` | Deploy Helm charts via `helm upgrade --install` |
+| **Config** | `actions/config-fetch-s3` | Fetch config files from AWS S3 |
+| **Config** | `actions/config-fetch-azure-blob` | Fetch config files from Azure Blob Storage |
+| **Config** | `actions/config-fetch-gcs` | Fetch config files from Google Cloud Storage |
+| **Config** | `actions/config-fetch-git` | Fetch config files from private Git repo |
 
 ## Quick Start
 
@@ -53,6 +57,7 @@ See the detailed docs for each domain:
 - [Atlas (Database Schema)](docs/ATLAS.md)
 - [Docker (Build & Push)](docs/DOCKER.md)
 - [K8s (Deployment)](docs/K8S.md)
+- [Config Fetch](docs/CONFIG-FETCH.md)
 
 ## Installing Skills for AI Agents
 
@@ -65,6 +70,7 @@ This repo ships with [Claude Code skills](https://docs.anthropic.com/en/docs/cla
 | `cloud-actions-atlas` | Database schema, Atlas, migrations, schema diff/apply |
 | `cloud-actions-docker` | Docker build, container image, push to registry |
 | `cloud-actions-k8s` | K8s deploy, kubectl apply, Helm upgrade, cluster deployment |
+| `cloud-actions-config-fetch` | Config fetch, download config, S3 config, Azure Blob config, GCS config, Git config |
 
 ### Installation
 
@@ -81,6 +87,7 @@ mkdir -p .claude/skills
 ln -s ../../.cloud-actions/.claude/skills/cloud-actions-atlas .claude/skills/cloud-actions-atlas
 ln -s ../../.cloud-actions/.claude/skills/cloud-actions-docker .claude/skills/cloud-actions-docker
 ln -s ../../.cloud-actions/.claude/skills/cloud-actions-k8s .claude/skills/cloud-actions-k8s
+ln -s ../../.cloud-actions/.claude/skills/cloud-actions-config-fetch .claude/skills/cloud-actions-config-fetch
 ```
 
 To update later:
@@ -100,6 +107,7 @@ mkdir -p .claude/skills
 cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-atlas .claude/skills/
 cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-docker .claude/skills/
 cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-k8s .claude/skills/
+cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-config-fetch .claude/skills/
 
 rm -rf /tmp/cloud-actions
 ```
@@ -113,6 +121,7 @@ git clone https://github.com/NFUChen/cloud-actions.git /tmp/cloud-actions
 cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-atlas ~/.claude/skills/
 cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-docker ~/.claude/skills/
 cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-k8s ~/.claude/skills/
+cp -r /tmp/cloud-actions/.claude/skills/cloud-actions-config-fetch ~/.claude/skills/
 
 rm -rf /tmp/cloud-actions
 ```
