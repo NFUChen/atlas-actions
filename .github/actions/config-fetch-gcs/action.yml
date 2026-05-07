@@ -1,0 +1,58 @@
+name: Fetch Config from GCS
+description: Download configuration files from a Google Cloud Storage bucket into the runner filesystem.
+
+inputs:
+  bucket:
+    description: "GCS bucket name"
+    required: true
+  path:
+    description: "Object path (single file) or prefix with wildcard e.g. configs/* (multi-file)"
+    required: true
+  destination:
+    description: "Local directory to download config files into"
+    required: false
+    default: "./config"
+  workload-identity-provider:
+    description: "Workload Identity Federation provider for OIDC. If set, OIDC is used instead of SA key."
+    required: false
+    default: ""
+  service-account:
+    description: "Service account email for OIDC impersonation (required when workload-identity-provider is set)"
+    required: false
+    default: ""
+  gcp-credentials-json:
+    description: "Service account key JSON (required when workload-identity-provider is empty)"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Authenticate to GCP (OIDC)
+      if: ${{ inputs.workload-identity-provider != '' }}
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload-identity-provider }}
+        service_account: ${{ inputs.service-account }}
+
+    - name: Authenticate to GCP (SA Key)
+      if: ${{ inputs.workload-identity-provider == '' }}
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ inputs.gcp-credentials-json }}
+
+    - name: Download config from GCS
+      shell: bash
+      env:
+        GCS_BUCKET: ${{ inputs.bucket }}
+        GCS_PATH: ${{ inputs.path }}
+        DEST: ${{ inputs.destination }}
+      run: |
+        mkdir -p "$DEST"
+        if [[ "$GCS_PATH" == *"*"* ]]; then
+          gsutil -q cp "gs://$GCS_BUCKET/$GCS_PATH" "$DEST/"
+        else
+          gsutil -q cp "gs://$GCS_BUCKET/$GCS_PATH" "$DEST/"
+        fi
+        FILE_COUNT=$(find "$DEST" -type f | wc -l | tr -d ' ')
+        echo "Downloaded $FILE_COUNT file(s) from gs://$GCS_BUCKET/$GCS_PATH to $DEST/"
