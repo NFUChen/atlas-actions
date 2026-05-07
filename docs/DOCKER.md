@@ -186,3 +186,15 @@ with:
     APP_VERSION=1.0.0
     GIT_SHA=${{ github.sha }}
 ```
+
+## Layer Caching
+
+All workflows use GitHub Actions cache as the Docker layer cache backend. This is always enabled and requires no configuration from callers.
+
+- **First build** on a branch runs without cache (cold build)
+- **Subsequent builds** reuse cached layers — only changed layers are rebuilt
+- **Multi-stage Dockerfiles** benefit the most: intermediate build stages (e.g. dependency download, compilation) are cached with `mode=max`
+- Cache is scoped to the repository and branch, with automatic fallback to the default branch's cache
+- GitHub provides 10 GB of cache storage per repository; least-recently-used entries are evicted when full
+
+This means projects with multi-stage Dockerfiles (Gradle, Maven, npm, Go) get fast incremental builds without any extra setup. For example, a Gradle project's dependency-download layer is cached and reused as long as `build.gradle` hasn't changed.

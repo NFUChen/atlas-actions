@@ -92,6 +92,8 @@ jobs:
           push: ${{ inputs.push }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: ${{ inputs.build-args }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Write job summary
         env:

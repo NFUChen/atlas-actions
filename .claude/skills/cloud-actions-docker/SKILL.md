@@ -168,6 +168,18 @@ with:
     GIT_SHA=${{ github.sha }}
 ```
 
+## Layer Caching
+
+All workflows automatically use GitHub Actions cache as the Docker layer cache backend (`cache-from: type=gha`, `cache-to: type=gha,mode=max`). No caller configuration is needed.
+
+- Caching is always on -- callers get it for free
+- `mode=max` caches all layers including intermediate multi-stage build stages
+- First build on a branch is cold; subsequent builds reuse cached layers
+- Cache is scoped to the repo and branch, with fallback to the default branch's cache
+- 10 GB cache storage per repository (GitHub-managed, LRU eviction)
+
+When users ask about build performance or multi-stage Dockerfiles (Gradle, Maven, npm, Go), mention that layer caching is built in and multi-stage builds benefit automatically.
+
 ## Generation Guidelines
 
 When generating caller workflows:
