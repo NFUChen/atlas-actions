@@ -1,0 +1,70 @@
+name: Fetch Config from S3
+description: Download configuration files from an AWS S3 bucket into the runner filesystem.
+
+inputs:
+  bucket:
+    description: "S3 bucket name"
+    required: true
+  path:
+    description: "S3 object key (single file) or prefix ending with / (multi-file recursive download)"
+    required: true
+  destination:
+    description: "Local directory to download config files into"
+    required: false
+    default: "./config"
+  aws-region:
+    description: "AWS region (e.g. us-east-1)"
+    required: true
+  role-arn:
+    description: "IAM role ARN for OIDC authentication. If set, OIDC is used instead of access keys."
+    required: false
+    default: ""
+  aws-access-key-id:
+    description: "AWS access key ID (required when role-arn is empty)"
+    required: false
+    default: ""
+  aws-secret-access-key:
+    description: "AWS secret access key (required when role-arn is empty)"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Mask credentials
+      if: ${{ inputs.aws-access-key-id != '' }}
+      shell: bash
+      run: |
+        echo "::add-mask::${{ inputs.aws-access-key-id }}"
+        echo "::add-mask::${{ inputs.aws-secret-access-key }}"
+
+    - name: Configure AWS credentials (OIDC)
+      if: ${{ inputs.role-arn != '' }}
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Configure AWS credentials (Access Key)
+      if: ${{ inputs.role-arn == '' }}
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Download config from S3
+      shell: bash
+      env:
+        S3_BUCKET: ${{ inputs.bucket }}
+        S3_PATH: ${{ inputs.path }}
+        DEST: ${{ inputs.destination }}
+      run: |
+        mkdir -p "$DEST"
+        if [[ "$S3_PATH" == */ ]]; then
+          aws s3 cp "s3://$S3_BUCKET/$S3_PATH" "$DEST/" --recursive --quiet
+        else
+          aws s3 cp "s3://$S3_BUCKET/$S3_PATH" "$DEST/" --quiet
+        fi
+        FILE_COUNT=$(find "$DEST" -type f | wc -l | tr -d ' ')
+        echo "Downloaded $FILE_COUNT file(s) from s3://$S3_BUCKET/$S3_PATH to $DEST/"
