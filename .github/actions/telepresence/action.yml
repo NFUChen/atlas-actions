@@ -1,0 +1,43 @@
+name: Telepresence Connection
+description: Connect to a Kubernetes cluster via Telepresence for accessing cluster-internal resources
+
+inputs:
+  kubeconfig:
+    description: Kubeconfig file content
+    required: true
+  also-proxy:
+    description: "Comma-separated CIDR ranges to also proxy through the Telepresence tunnel (e.g. '10.0.0.0/8,172.16.0.0/12')"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - run: |
+        curl -fsSL https://app.getambassador.io/download/tel2oss/releases/download/v2.22.0/telepresence-linux-amd64 -o /usr/local/bin/telepresence
+        chmod +x /usr/local/bin/telepresence
+        telepresence version
+      shell: bash
+    - run: |
+        mkdir -p ~/.kube
+        echo "${{ inputs.kubeconfig }}" > ~/.kube/config
+        chmod 600 ~/.kube/config
+      shell: bash
+    - run: |
+        ALSO_PROXY_ARGS=()
+        if [ -n "$ALSO_PROXY" ]; then
+          IFS=',' read -ra CIDRS <<< "$ALSO_PROXY"
+          for cidr in "${CIDRS[@]}"; do
+            trimmed=$(echo "$cidr" | xargs)
+            [ -n "$trimmed" ] && ALSO_PROXY_ARGS+=(--also-proxy "$trimmed")
+          done
+        fi
+        telepresence connect "${ALSO_PROXY_ARGS[@]}"
+        telepresence status
+      shell: bash
+      env:
+        ALSO_PROXY: ${{ inputs.also-proxy }}
+
+branding:
+  icon: globe
+  color: blue
