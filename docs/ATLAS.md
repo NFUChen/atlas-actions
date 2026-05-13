@@ -17,6 +17,7 @@ Reusable GitHub Actions workflows for [Atlas](https://atlasgo.io/) declarative s
 - An Atlas HCL schema file or directory in your repo (e.g. `schema/schema.hcl` or `schema/`)
 - A `DB_URL` secret configured in your repo with the target database connection string
 - (Optional) A `WG_CONFIG_FILE` secret with WireGuard config if the database is behind a VPN
+- (Optional) A `KUBECONFIG` secret if the database is inside a Kubernetes cluster (use Telepresence; mutually exclusive with WireGuard)
 
 ### 1. Plan on Pull Request
 
@@ -122,6 +123,7 @@ This extracts the current database schema as HCL and commits it to the specified
 | `schemas` | string | no | `""` | inspect | Comma-separated schema names to inspect (empty = all) |
 | `output-path` | string | no | `""` | inspect | If set, commits inspected HCL to this path in the repo |
 | `target-branch` | string | no | `main` | inspect | Branch to commit to when output-path is set |
+| `also-proxy` | string | no | `""` | all | Comma-separated CIDR ranges to also proxy through Telepresence |
 
 ## Secrets
 
@@ -129,6 +131,7 @@ This extracts the current database schema as HCL and commits it to the specified
 |------|----------|-------------|
 | `db-url` | yes | Target database connection URL |
 | `wg-config-file` | no | WireGuard config file content for VPN tunnel to database |
+| `kubeconfig` | no | Kubeconfig file content for Telepresence connection to K8s cluster (mutually exclusive with `wg-config-file`) |
 | `pat` | no | Personal access token for pushing commits (required for inspect with `output-path`) |
 
 ## How It Works
@@ -200,3 +203,21 @@ with:
 | `atlas_schema_revisions.*` | Exclude objects inside `atlas_schema_revisions` schema |
 
 See the [Atlas CLI Reference](https://atlasgo.io/cli-reference) for full glob pattern syntax.
+
+## Connecting via Telepresence
+
+If your database is only accessible inside a Kubernetes cluster, use [Telepresence](https://www.telepresence.io/) instead of WireGuard. Provide a `KUBECONFIG` secret and optionally specify CIDR ranges to also proxy.
+
+> **Note:** WireGuard and Telepresence are mutually exclusive. If both `wg-config-file` and `kubeconfig` secrets are provided, the workflow will fail.
+
+```yaml
+jobs:
+  plan:
+    uses: NFUChen/cloud-actions/.github/workflows/atlas-schema-plan.yml@main
+    with:
+      schema-path: "schema/schema.hcl"
+      also-proxy: "10.0.0.0/8"
+    secrets:
+      db-url: ${{ secrets.DB_URL }}
+      kubeconfig: ${{ secrets.KUBECONFIG }}
+```
