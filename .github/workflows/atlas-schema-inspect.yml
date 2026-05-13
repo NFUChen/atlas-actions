@@ -7,12 +7,12 @@ on:
         description: "Atlas binary version tag from NFUChen/atlas releases"
         required: false
         type: string
-        default: "v0.1.2"
+        default: "v2.0.0"
       dev-url:
         description: "Atlas dev database URL for schema normalization"
         required: false
         type: string
-        default: "docker://postgres/15"
+        default: "docker://postgres/17"
       exclude:
         description: "Comma-separated glob patterns to exclude database objects from inspect (e.g. '*.audit_logs,temp_*'). Supports type filters like '*[type=function]'. Each pattern is passed as a separate --exclude flag."
         required: false

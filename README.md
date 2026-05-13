@@ -8,6 +8,7 @@ Reusable GitHub Actions workflows and composite actions for common cloud infrast
 |--------|----------|-------------|
 | **Database** | `atlas-schema-plan.yml` | Preview Atlas schema diff on PR |
 | **Database** | `atlas-schema-apply.yml` | Apply Atlas schema changes |
+| **Database** | `atlas-schema-inspect.yml` | Inspect live DB schema, optionally commit HCL to repo |
 | **Docker** | `docker-build-push-ghcr.yml` | Build & push to GitHub Container Registry |
 | **Docker** | `docker-build-push-dockerhub.yml` | Build & push to Docker Hub |
 | **Docker** | `docker-build-push-ecr.yml` | Build & push to AWS ECR |
