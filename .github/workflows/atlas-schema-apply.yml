@@ -22,12 +22,20 @@ on:
         required: false
         type: string
         default: "v2.0.0"
+      also-proxy:
+        description: "Comma-separated CIDR ranges to also proxy through Telepresence (e.g. '10.0.0.0/8')"
+        required: false
+        type: string
+        default: ""
     secrets:
       db-url:
         description: "Target database connection URL"
         required: true
       wg-config-file:
         description: "WireGuard configuration file content for VPN tunnel"
+        required: false
+      kubeconfig:
+        description: "Kubeconfig file content for Telepresence connection to K8s cluster"
         required: false
 
 jobs:
@@ -38,6 +46,16 @@ jobs:
       - name: Checkout caller repo
         uses: actions/checkout@v4
 
+      - name: Validate network config
+        env:
+          WG: ${{ secrets.wg-config-file }}
+          KC: ${{ secrets.kubeconfig }}
+        run: |
+          if [ -n "$WG" ] && [ -n "$KC" ]; then
+            echo "::error::Both wg-config-file and kubeconfig are set. Only one network tunnel is allowed."
+            exit 1
+          fi
+
       - name: Set up WireGuard connection
         if: ${{ env.WG_CONFIG_FILE != '' }}
         uses: ./.github/actions/wireguard
@@ -45,6 +63,15 @@ jobs:
           WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
         with:
           WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+
+      - name: Set up Telepresence connection
+        if: ${{ env.KUBECONFIG_CONTENT != '' }}
+        uses: ./.github/actions/telepresence
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.kubeconfig }}
+        with:
+          kubeconfig: ${{ secrets.kubeconfig }}
+          also-proxy: ${{ inputs.also-proxy }}
 
       - name: Check database connectivity
         env:
