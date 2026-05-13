@@ -1,0 +1,182 @@
+name: Atlas Schema Inspect
+
+on:
+  workflow_call:
+    inputs:
+      atlas-version:
+        description: "Atlas binary version tag from NFUChen/atlas releases"
+        required: false
+        type: string
+        default: "v0.1.2"
+      dev-url:
+        description: "Atlas dev database URL for schema normalization"
+        required: false
+        type: string
+        default: "docker://postgres/15"
+      exclude:
+        description: "Comma-separated glob patterns to exclude database objects from inspect (e.g. '*.audit_logs,temp_*'). Supports type filters like '*[type=function]'. Each pattern is passed as a separate --exclude flag."
+        required: false
+        type: string
+        default: ""
+      schemas:
+        description: "Comma-separated schema names to inspect (e.g. 'public,auth'). Empty means all schemas."
+        required: false
+        type: string
+        default: ""
+      output-path:
+        description: "If set, commits the inspected HCL to this path in the repo (e.g. 'schema/schema.hcl')"
+        required: false
+        type: string
+        default: ""
+      target-branch:
+        description: "Branch to commit to when output-path is set"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      db-url:
+        description: "Target database connection URL"
+        required: true
+      wg-config-file:
+        description: "WireGuard configuration file content for VPN tunnel"
+        required: false
+      pat:
+        description: "Personal access token for pushing commits (required when output-path is set)"
+        required: false
+
+jobs:
+  inspect:
+    name: Schema Inspect
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Set up WireGuard connection
+        if: ${{ env.WG_CONFIG_FILE != '' }}
+        uses: ./.github/actions/wireguard
+        env:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+        with:
+          WG_CONFIG_FILE: ${{ secrets.wg-config-file }}
+
+      - name: Check database connectivity
+        env:
+          DB_URL: ${{ secrets.db-url }}
+        run: |
+          DB_HOST=$(echo "$DB_URL" | sed -E 's|.*@([^:/]+).*|\1|')
+          DB_PORT=$(echo "$DB_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+          if ! echo "$DB_PORT" | grep -qE '^[0-9]+$'; then
+            DB_PORT=5432
+          fi
+          echo "Testing connectivity to ${DB_HOST}:${DB_PORT}..."
+          if ! nc -zv -w 10 "$DB_HOST" "$DB_PORT" 2>&1; then
+            echo "::error::Cannot reach database at ${DB_HOST}:${DB_PORT}. Aborting inspect."
+            exit 1
+          fi
+          echo "Database connectivity check passed."
+
+      - name: Download Atlas binary
+        env:
+          ATLAS_VERSION: ${{ inputs.atlas-version }}
+        run: |
+          curl -fsSL "https://github.com/NFUChen/atlas/releases/download/${ATLAS_VERSION}/atlas-linux-amd64" -o /usr/local/bin/atlas
+          chmod +x /usr/local/bin/atlas
+          atlas version
+
+      - name: Inspect database schema
+        id: inspect
+        env:
+          DB_URL: ${{ secrets.db-url }}
+          DEV_URL: ${{ inputs.dev-url }}
+          EXCLUDE: ${{ inputs.exclude }}
+          SCHEMAS: ${{ inputs.schemas }}
+        run: |
+          EXCLUDE_ARGS=()
+          if [ -n "$EXCLUDE" ]; then
+            IFS=',' read -ra PATTERNS <<< "$EXCLUDE"
+            for pattern in "${PATTERNS[@]}"; do
+              trimmed=$(echo "$pattern" | xargs)
+              [ -n "$trimmed" ] && EXCLUDE_ARGS+=(--exclude "$trimmed")
+            done
+          fi
+          SCHEMA_ARGS=()
+          if [ -n "$SCHEMAS" ]; then
+            IFS=',' read -ra SCHEMA_LIST <<< "$SCHEMAS"
+            for schema in "${SCHEMA_LIST[@]}"; do
+              trimmed=$(echo "$schema" | xargs)
+              [ -n "$trimmed" ] && SCHEMA_ARGS+=(--schema "$trimmed")
+            done
+          fi
+          OUTPUT=$(atlas schema inspect \
+            --url "$DB_URL" \
+            --dev-url "$DEV_URL" \
+            "${EXCLUDE_ARGS[@]}" \
+            "${SCHEMA_ARGS[@]}" 2>&1) || true
+          {
+            echo "schema<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        env:
+          DEV_URL: ${{ inputs.dev-url }}
+          SCHEMAS: ${{ inputs.schemas }}
+          SCHEMA_OUTPUT: ${{ steps.inspect.outputs.schema }}
+        run: |
+          {
+            echo "## Atlas Schema Inspect"
+            echo ""
+            echo "**Dev URL**: \`${DEV_URL}\`"
+            if [ -n "$SCHEMAS" ]; then
+              echo "**Schemas**: \`${SCHEMAS}\`"
+            fi
+            echo ""
+            echo "### Current Schema"
+            echo ""
+            echo '```hcl'
+            echo "$SCHEMA_OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save schema to file
+        env:
+          SCHEMA_OUTPUT: ${{ steps.inspect.outputs.schema }}
+        run: |
+          mkdir -p inspect-output
+          echo "$SCHEMA_OUTPUT" > inspect-output/schema.hcl
+
+      - name: Upload schema artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-schema-inspect
+          path: inspect-output/schema.hcl
+          retention-days: 30
+
+      - name: Commit schema to repo
+        if: ${{ inputs.output-path != '' }}
+        env:
+          OUTPUT_PATH: ${{ inputs.output-path }}
+          TARGET_BRANCH: ${{ inputs.target-branch }}
+          PAT: ${{ secrets.pat }}
+          SCHEMA_OUTPUT: ${{ steps.inspect.outputs.schema }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::output-path is set but pat secret is missing. A personal access token is required to push commits."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${PAT}@github.com/${{ github.repository }}.git"
+          git fetch origin "$TARGET_BRANCH"
+          git checkout "$TARGET_BRANCH"
+          mkdir -p "$(dirname "$OUTPUT_PATH")"
+          echo "$SCHEMA_OUTPUT" > "$OUTPUT_PATH"
+          if git diff --quiet "$OUTPUT_PATH" 2>/dev/null; then
+            echo "No schema changes detected. Skipping commit."
+          else
+            git add "$OUTPUT_PATH"
+            git commit -m "chore: update schema from atlas inspect"
+            git push origin "$TARGET_BRANCH"
+          fi
