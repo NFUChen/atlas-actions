@@ -3,7 +3,7 @@ description: Connect to a Kubernetes cluster via Telepresence for accessing clus
 
 inputs:
   kubeconfig:
-    description: Kubeconfig file content
+    description: Kubeconfig file content (base64 encoded)
     required: true
   also-proxy:
     description: "Comma-separated CIDR ranges to also proxy through the Telepresence tunnel (e.g. '10.0.0.0/8,172.16.0.0/12')"
@@ -20,7 +20,7 @@ runs:
       shell: bash
     - run: |
         mkdir -p ~/.kube
-        echo "${{ inputs.kubeconfig }}" > ~/.kube/config
+        echo "${{ inputs.kubeconfig }}" | base64 -d > ~/.kube/config
         chmod 600 ~/.kube/config
       shell: bash
     - run: |

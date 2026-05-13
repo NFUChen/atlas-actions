@@ -46,7 +46,7 @@ on:
         description: "WireGuard configuration file content for VPN tunnel"
         required: false
       kubeconfig:
-        description: "Kubeconfig file content for Telepresence connection to K8s cluster"
+        description: "Kubeconfig file content (base64 encoded) for Telepresence connection to K8s cluster"
         required: false
       pat:
         description: "Personal access token for pushing commits (required when output-path is set)"
