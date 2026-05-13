@@ -21,7 +21,7 @@ on:
         description: "Atlas binary version tag from NFUChen/atlas releases"
         required: false
         type: string
-        default: "v0.1.2"
+        default: "v2.0.0"
     secrets:
       db-url:
         description: "Target database connection URL"
