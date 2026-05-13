@@ -45,9 +45,11 @@ jobs:
       dev-url: "docker://postgres/15"      # optional -- default: docker://postgres/15
       exclude: ""                          # optional -- comma-separated glob patterns
       atlas-version: "v2.0.0"             # optional -- default: v2.0.0
+      also-proxy: ""                          # optional -- CIDR ranges for Telepresence
     secrets:
       db-url: ${{ secrets.DB_URL }}        # required -- target database connection URL
       wg-config-file: ${{ secrets.WG_CONFIG_FILE }}  # optional -- WireGuard VPN config
+      kubeconfig: ${{ secrets.KUBECONFIG }}   # optional -- Telepresence K8s tunnel (mutually exclusive with wg-config-file)
 ```
 
 ### Schema Apply -- Inputs & Secrets
@@ -61,9 +63,11 @@ jobs:
       dev-url: "docker://postgres/15"      # optional -- default: docker://postgres/15
       exclude: ""                          # optional -- comma-separated glob patterns
       atlas-version: "v2.0.0"             # optional -- default: v2.0.0
+      also-proxy: ""                          # optional -- CIDR ranges for Telepresence
     secrets:
       db-url: ${{ secrets.DB_URL }}        # required -- target database connection URL
       wg-config-file: ${{ secrets.WG_CONFIG_FILE }}  # optional -- WireGuard VPN config
+      kubeconfig: ${{ secrets.KUBECONFIG }}   # optional -- Telepresence K8s tunnel (mutually exclusive with wg-config-file)
 ```
 
 ### Schema Inspect -- Inputs & Secrets
@@ -79,9 +83,11 @@ jobs:
       atlas-version: "v2.0.0"             # optional -- default: v2.0.0
       output-path: ""                      # optional -- commit HCL to this path
       target-branch: "main"               # optional -- branch to commit to
+      also-proxy: ""                          # optional -- CIDR ranges for Telepresence
     secrets:
       db-url: ${{ secrets.DB_URL }}        # required -- target database connection URL
       wg-config-file: ${{ secrets.WG_CONFIG_FILE }}  # optional -- WireGuard VPN config
+      kubeconfig: ${{ secrets.KUBECONFIG }}   # optional -- Telepresence K8s tunnel (mutually exclusive with wg-config-file)
       pat: ${{ secrets.PAT }}              # optional -- required when output-path is set
 ```
 
@@ -96,6 +102,7 @@ jobs:
 | `schemas` | string | no | `""` | inspect | Comma-separated schema names to inspect (empty = all) |
 | `output-path` | string | no | `""` | inspect | If set, commits inspected HCL to this path in the repo |
 | `target-branch` | string | no | `main` | inspect | Branch to commit to when output-path is set |
+| `also-proxy` | string | no | `""` | all | Comma-separated CIDR ranges to also proxy through Telepresence |
 
 ### Secrets Detail
 
@@ -103,6 +110,7 @@ jobs:
 |------|----------|-------------|
 | `db-url` | yes | Target database connection URL (e.g. `postgres://user:pass@host:5432/dbname`) |
 | `wg-config-file` | no | WireGuard config file content for VPN tunnel to database |
+| `kubeconfig` | no | Kubeconfig file content for Telepresence connection to K8s cluster (mutually exclusive with `wg-config-file`) |
 | `pat` | no | Personal access token for pushing commits (required for inspect with `output-path`) |
 
 ### Common dev-url Values
@@ -203,12 +211,35 @@ jobs:
       wg-config-file: ${{ secrets.WG_CONFIG_FILE }}
 ```
 
+## Complete Example: Plan via Telepresence
+
+```yaml
+# .github/workflows/db-plan-k8s.yml
+name: DB Schema Plan (K8s)
+
+on:
+  pull_request:
+    paths:
+      - 'schema/**'
+
+jobs:
+  plan:
+    uses: NFUChen/cloud-actions/.github/workflows/atlas-schema-plan.yml@main
+    with:
+      schema-path: "schema/schema.hcl"
+      also-proxy: "10.0.0.0/8"
+    secrets:
+      db-url: ${{ secrets.DB_URL }}
+      kubeconfig: ${{ secrets.KUBECONFIG }}
+```
+
 ## Prerequisites for the Caller Repo
 
 1. Atlas HCL schema file(s) in the repo (e.g. `schema/schema.hcl`) — required for plan/apply, not needed for inspect
 2. `DB_URL` secret configured with the target database connection string
 3. (Optional) `WG_CONFIG_FILE` secret if the database is behind a VPN
-4. (Optional) `PAT` secret with repo write permissions — required for inspect with `output-path`
+4. (Optional) `KUBECONFIG` secret if the database is inside a K8s cluster (Telepresence; mutually exclusive with WireGuard)
+5. (Optional) `PAT` secret with repo write permissions — required for inspect with `output-path`
 
 ## Generation Guidelines
 
@@ -217,6 +248,9 @@ When generating caller workflows:
 - Always ask the user for their schema file path if not provided (for plan/apply)
 - Default to `docker://postgres/15` for dev-url unless user specifies a different database
 - Include `wg-config-file` secret only if the user mentions VPN or private network access
+- Include `kubeconfig` secret if the user mentions Kubernetes, cluster-internal, or Telepresence
+- WireGuard and Telepresence are mutually exclusive -- never include both in the same caller workflow
+- If using Telepresence, ask if the user needs `also-proxy` for additional CIDR ranges
 - Use `paths` filter on PR trigger to only run plan when schema files change
 - Use `workflow_dispatch` for apply and inspect so they require manual triggering
 - The `exclude` input is rarely needed -- only include if user mentions objects to skip
