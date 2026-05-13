@@ -196,8 +196,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin "https://x-access-token:${PAT}@github.com/${{ github.repository }}.git"
-          git fetch origin "$TARGET_BRANCH"
-          git checkout "$TARGET_BRANCH"
+          if git fetch origin "$TARGET_BRANCH" 2>/dev/null; then
+            git checkout "$TARGET_BRANCH"
+          else
+            echo "Branch '$TARGET_BRANCH' does not exist on remote. Creating it."
+            git checkout --orphan "$TARGET_BRANCH"
+            git rm -rf . 2>/dev/null || true
+          fi
           mkdir -p "$(dirname "$OUTPUT_PATH")"
           echo "$SCHEMA_OUTPUT" > "$OUTPUT_PATH"
           if git diff --quiet "$OUTPUT_PATH" 2>/dev/null; then
