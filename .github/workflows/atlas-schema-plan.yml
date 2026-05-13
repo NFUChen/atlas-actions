@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      atlas-version:
+        description: "Atlas binary version tag from NFUChen/atlas releases"
+        required: false
+        type: string
+        default: "v0.1.2"
     secrets:
       db-url:
         description: "Target database connection URL"
@@ -60,8 +65,13 @@ jobs:
           fi
           echo "Database connectivity check passed."
 
-      - name: Setup Atlas
-        uses: ariga/setup-atlas@v0
+      - name: Download Atlas binary
+        env:
+          ATLAS_VERSION: ${{ inputs.atlas-version }}
+        run: |
+          curl -fsSL "https://github.com/NFUChen/atlas/releases/download/${ATLAS_VERSION}/atlas-linux-amd64" -o /usr/local/bin/atlas
+          chmod +x /usr/local/bin/atlas
+          atlas version
 
       - name: Generate schema diff
         id: diff
