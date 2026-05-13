@@ -205,10 +205,8 @@ jobs:
           fi
           mkdir -p "$(dirname "$OUTPUT_PATH")"
           echo "$SCHEMA_OUTPUT" > "$OUTPUT_PATH"
-          if git diff --quiet "$OUTPUT_PATH" 2>/dev/null; then
-            echo "No schema changes detected. Skipping commit."
-          else
-            git add "$OUTPUT_PATH"
+          git add "$OUTPUT_PATH"
+          git diff --cached --quiet || {
             git commit -m "chore: update schema from atlas inspect"
             git push origin "$TARGET_BRANCH"
-          fi
+          }
